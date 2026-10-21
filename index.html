@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#123968">
+<title>Log Fácil — Radioamador</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#172033;background:#eef3f8}
+*{box-sizing:border-box}body{margin:0}header{background:#123968;color:#fff;padding:18px 16px 16px}
+header h1{font-size:1.35rem;margin:0}header p{margin:5px 0 0;color:#d8e7fb;font-size:.9rem}
+main{max-width:760px;margin:auto;padding:14px;display:grid;gap:14px}
+.card{background:#fff;border-radius:16px;padding:16px;box-shadow:0 2px 10px #12243a12}
+h2{font-size:1.08rem;margin:0 0 14px}
+label{font-size:.88rem;font-weight:650;display:block;margin:0 0 5px}
+input,select{width:100%;min-height:45px;border:1px solid #c5d0de;border-radius:10px;padding:10px;font:inherit;background:white;color:#172033}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.wide{grid-column:1/-1}
+button{border:0;border-radius:11px;padding:13px 15px;font:inherit;font-weight:750;cursor:pointer;min-height:46px}
+.primary{background:#16803d;color:white;width:100%;font-size:1.08rem}.blue{background:#1769c2;color:white}.secondary{background:#e7eef7;color:#15375e}.danger{background:#fff0ef;color:#a52b24}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
+.small{font-size:.84rem;color:#5c6879;line-height:1.4}.status{padding:10px 12px;border-radius:10px;background:#e7f7ec;color:#176333;font-size:.9rem;margin-top:10px}
+.qso{border:1px solid #e0e6ee;border-radius:10px;padding:10px;margin-top:8px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.qso strong{display:block}.qso small{color:#667085}.qso button{min-height:34px;padding:7px 10px}
+footer{text-align:center;color:#6b7280;font-size:.8rem;padding:0 16px 24px}
+@media(max-width:420px){.fields{gap:9px}.card{padding:13px}.actions{grid-template-columns:1fr}.qso{align-items:flex-start}}
+</style>
+</head>
+<body>
+<header><h1>📻 Log Fácil</h1><p>Log de radioamador offline · Exportação ADIF para QRZ</p></header>
+<main>
+<section class="card">
+<h2>Novo QSO</h2>
+<form id="qsoForm">
+<div class="fields">
+<div class="wide"><label for="call">Indicativo trabalhado *</label><input id="call" required autocomplete="off" autocapitalize="characters" placeholder="Ex.: PY7RFP"></div>
+<div><label for="band">Banda</label><select id="band"><option>160m</option><option>80m</option><option>60m</option><option>40m</option><option>30m</option><option>20m</option><option>17m</option><option>15m</option><option>12m</option><option selected>10m</option><option>6m</option><option>2m</option><option>70cm</option></select></div>
+<div><label for="mode">Modo</label><select id="mode"><option selected>FT8</option><option>FT4</option><option>SSB</option><option>USB</option><option>LSB</option><option>CW</option><option>FM</option><option>AM</option><option>RTTY</option><option>PSK31</option></select></div>
+<div><label for="rstSent">RST enviado</label><input id="rstSent" value="-10"></div>
+<div><label for="rstRcvd">RST recebido</label><input id="rstRcvd" value="-10"></div>
+<div><label for="freq">Frequência MHz (opcional)</label><input id="freq" inputmode="decimal" placeholder="Ex.: 28.074"></div>
+<div><label for="grid">Grid recebido (opcional)</label><input id="grid" autocapitalize="characters" placeholder="Ex.: HI22"></div>
+</div>
+<p class="small">A data e a hora UTC são preenchidas automaticamente ao salvar. O QSO fica guardado neste aparelho, sem precisar de internet.</p>
+<button class="primary" type="submit">✓ SALVAR QSO</button>
+<div id="status" aria-live="polite"></div>
+</form>
+</section>
+<section class="card">
+<h2>Seus dados de estação</h2>
+<div class="fields">
+<div><label for="myCall">Seu indicativo</label><input id="myCall" value="PP5DKR" autocapitalize="characters"></div>
+<div><label for="myGrid">Seu grid</label><input id="myGrid" value="GG50FV" autocapitalize="characters"></div>
+</div>
+<p class="small">Esses dados serão incluídos no ADIF exportado.</p>
+</section>
+<section class="card">
+<h2>Histórico local <span id="count">(0)</span></h2>
+<p class="small">Os contatos ficam salvos neste navegador. Exporte backups ADIF regularmente e não limpe os dados do navegador sem exportar.</p>
+<div class="actions">
+<button class="blue" id="exportBtn">⬇ EXPORTAR ADIF</button>
+<button class="secondary" id="backupBtn">Salvar cópia ADIF</button>
+</div>
+<div id="history"></div>
+<div class="actions">
+<button class="secondary" id="importBtn">Importar ADIF neste app</button>
+<button class="danger" id="clearBtn">Apagar todos os QSOs</button>
+<input id="fileInput" type="file" accept=".adi,.adif,text/plain" hidden>
+</div>
+</section>
+</main>
+<footer>Log Fácil · Funciona offline após abrir este arquivo no aparelho. QRZ não recebe os contatos automaticamente: importe o ADIF no site quando estiver online.</footer>
+<script>
+const $=id=>document.getElementById(id);
+const STORE='logfacil_qsos_v1';
+let qsos=[];
+try{qsos=JSON.parse(localStorage.getItem(STORE)||'[]');if(!Array.isArray(qsos))qsos=[]}catch(e){qsos=[]}
+const z=n=>String(n).padStart(2,'0');
+function utcNow(){const d=new Date();return {date:d.getUTCFullYear()+z(d.getUTCMonth()+1)+z(d.getUTCDate()),time:z(d.getUTCHours())+z(d.getUTCMinutes())+z(d.getUTCSeconds())}}
+function persist(){try{localStorage.setItem(STORE,JSON.stringify(qsos));return true}catch(e){alert('Não foi possível salvar no navegador. Exporte os contatos e verifique o espaço disponível.');return false}}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function render(){
+ $('count').textContent='('+qsos.length+')';
+ $('history').innerHTML=qsos.slice().reverse().slice(0,100).map(q=>`<div class="qso"><div><strong>${esc(q.call)} · ${esc(q.band)} · ${esc(q.mode)}</strong><small>${q.date.slice(0,4)}-${q.date.slice(4,6)}-${q.date.slice(6,8)} ${q.time.slice(0,2)}:${q.time.slice(2,4)} UTC · RST ${esc(q.rstSent)}/${esc(q.rstRcvd)}</small></div><button class="danger" data-del="${esc(q.id)}" aria-label="Excluir ${esc(q.call)}">Excluir</button></div>`).join('')||'<p class="small">Nenhum QSO registrado ainda.</p>';
+}
+function field(tag,value){value=String(value??'');return `<${tag}:${value.length}>${value}`;}
+function adif(){
+ const station=$('myCall').value.trim().toUpperCase(), grid=$('myGrid').value.trim().toUpperCase();
+ let out='Generated by Log Facil\r\n<ADIF_VER:5>3.1.4 <PROGRAMID:9>LOGFACIL <EOH>\r\n';
+ for(const q of qsos){
+  const fields=[
+   ['CALL',q.call],['QSO_DATE',q.date],['TIME_ON',q.time],['BAND',q.band],['MODE',q.mode],
+   ['RST_SENT',q.rstSent],['RST_RCVD',q.rstRcvd],['STATION_CALLSIGN',station],['MY_GRIDSQUARE',grid]
+  ];
+  if(q.freq)fields.push(['FREQ',q.freq]);
+  if(q.grid)fields.push(['GRIDSQUARE',q.grid]);
+  out+=fields.map(([k,v])=>field(k,v)).join(' ')+' <EOR>\r\n';
+ }
+ return out;
+}
+function download(){
+ if(!qsos.length){alert('Ainda não há QSOs para exportar.');return}
+ const blob=new Blob(['\ufeff'+adif()],{type:'text/plain;charset=utf-8'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;
+ a.download='LogFacil_'+($('myCall').value.trim().toUpperCase()||'QSOS')+'_'+new Date().toISOString().slice(0,10)+'.adi';
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+$('qsoForm').addEventListener('submit',e=>{
+ e.preventDefault();
+ const call=$('call').value.trim().toUpperCase();
+ if(!call){$('call').focus();return}
+ const t=utcNow();
+ let freq=$('freq').value.trim().replace(',','.');
+ if(freq&&!/^\d+(\.\d+)?$/.test(freq)){alert('Confira a frequência em MHz, por exemplo 28.074.');return}
+ const q={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),call,date:t.date,time:t.time,band:$('band').value,mode:$('mode').value.toUpperCase(),rstSent:$('rstSent').value.trim(),rstRcvd:$('rstRcvd').value.trim(),freq,grid:$('grid').value.trim().toUpperCase()};
+ qsos.push(q);if(!persist()){qsos.pop();return}
+ $('status').className='status';$('status').textContent=`QSO com ${call} salvo no celular às ${t.time.slice(0,2)}:${t.time.slice(2,4)} UTC.`;
+ $('call').value='';$('grid').value='';$('freq').value='';$('call').focus();render();
+});
+$('history').addEventListener('click',e=>{
+ const b=e.target.closest('[data-del]');if(!b)return;
+ const q=qsos.find(x=>x.id===b.dataset.del);if(!q||!confirm('Excluir o QSO com '+q.call+'?'))return;
+ qsos=qsos.filter(x=>x.id!==b.dataset.del);persist();render();
+});
+$('exportBtn').addEventListener('click',download);$('backupBtn').addEventListener('click',download);
+$('clearBtn').addEventListener('click',()=>{if(!qsos.length)return;if(confirm('Tem certeza que deseja apagar TODOS os QSOs deste aparelho? Exporte um ADIF antes.')){qsos=[];persist();render();}});
+$('importBtn').addEventListener('click',()=>$('fileInput').click());
+$('fileInput').addEventListener('change',async e=>{
+ const f=e.target.files[0];if(!f)return;
+ const s=await f.text();const blocks=s.split(/<EOR>/i);let added=0;
+ function get(b,key){const re=new RegExp('<'+key+':(\\\\d+)(?::[^>]*)?>','i');const m=re.exec(b);return m?b.slice(m.index+m[0].length,m.index+m[0].length+Number(m[1])).trim():''}
+ for(const b of blocks){const call=get(b,'CALL'),date=get(b,'QSO_DATE'),time=get(b,'TIME_ON');if(!call||!/^\d{8}$/.test(date)||!/^\d{4,6}$/.test(time))continue;
+  const q={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),call:call.toUpperCase(),date,time:time.padEnd(6,'0'),band:get(b,'BAND')||'10m',mode:get(b,'MODE')||'SSB',rstSent:get(b,'RST_SENT'),rstRcvd:get(b,'RST_RCVD'),freq:get(b,'FREQ'),grid:get(b,'GRIDSQUARE')};
+  const exists=qsos.some(x=>x.call===q.call&&x.date===q.date&&x.time.slice(0,4)===q.time.slice(0,4)&&x.band===q.band&&x.mode===q.mode);
+  if(!exists){qsos.push(q);added++}
+ }
+ persist();render();alert(`${added} QSO(s) importado(s). Duplicados ou registros inválidos foram ignorados.`);e.target.value='';
+});
+render();
+</script>
+</body>
+</html>
